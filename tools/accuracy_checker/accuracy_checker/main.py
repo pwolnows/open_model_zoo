@@ -135,6 +135,7 @@ def configure_evaluator_kwargs(args):
         evaluator_kwargs['csv_result'] = args.csv_result
         evaluator_kwargs['ignore_metric_reference'] = args.ignore_metric_reference
     evaluator_kwargs['store_only'] = args.store_only
+    evaluator_kwargs['dump_inputs_file'] = args.dump_inputs_file
     return evaluator_kwargs
 
 
