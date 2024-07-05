@@ -226,6 +226,11 @@ def add_tool_settings_args(parser):
         help='file for additional logging results',
         required=False
     )
+    tool_settings_args.add_argument(
+        '--dump_inputs_file',
+        help='path to pickle file with saved model inputs. Used for development',
+        required=False
+    )
 
 
 def add_openvino_specific_args(parser):
