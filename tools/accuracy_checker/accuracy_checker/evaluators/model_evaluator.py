@@ -401,6 +401,9 @@ class ModelEvaluator(BaseEvaluator):
             self._load_stored_predictions(stored_predictions, progress_reporter)
             return self._annotations, self._predictions
 
+        dump_inputs_path = kwargs.get('dump_inputs_file', None)
+        if dump_inputs_path:
+            self._reset_stored_inputs(dump_inputs_path)
         if self.dataset.batch is None:
             self.dataset.batch = self.launcher.batch
         if store_only and self._is_stored(stored_predictions):
@@ -412,6 +415,8 @@ class ModelEvaluator(BaseEvaluator):
         self._resolve_undefined_shapes()
         for batch_id, (batch_input_ids, batch_annotation, batch_input, batch_identifiers) in enumerate(self.dataset):
             filled_inputs, batch_meta, _ = self._get_batch_input(batch_annotation, batch_input)
+            if dump_inputs_path:
+                self.prepare_inputs_to_store(filled_inputs, batch_identifiers, dump_inputs_path)            
             batch_predictions = self.launcher.predict(filled_inputs, batch_meta, **kwargs)
             if stored_predictions:
                 self.prepare_prediction_to_store(batch_predictions, batch_identifiers, batch_meta, stored_predictions)
@@ -621,10 +626,13 @@ class ModelEvaluator(BaseEvaluator):
             progress_reporter.finish(False)
 
         return predictions
-
+    
     def prepare_prediction_to_store(self, batch_predictions, batch_identifiers, batch_meta, stored_predictions):
         prediction_to_store = StoredPredictionBatch(batch_predictions, batch_identifiers, batch_meta)
         self.store_predictions(stored_predictions, prediction_to_store)
+
+    def prepare_inputs_to_store(self, inputs, batch_identifiers, dump_inputs_path):
+        self.store_inputs(dump_inputs_path, (inputs, batch_identifiers))
 
     @property
     def metrics_results(self):
@@ -672,6 +680,16 @@ class ModelEvaluator(BaseEvaluator):
         with open(stored_predictions, 'wb'):
             print_info("File {} will be cleared for storing predictions".format(stored_predictions))
 
+    @staticmethod
+    def store_inputs(dump_inputs_path, inputs):
+        with open(dump_inputs_path, "ab") as content:
+            pickle.dump(inputs, content)
+
+    @staticmethod
+    def _reset_stored_inputs(dump_inputs_path):
+        with open(dump_inputs_path, 'wb'):
+            print_info("File {} will be cleared for storing model inputs".format(dump_inputs_path))
+    
     def _switch_to_sync(self):
         final_status = False
         if (
