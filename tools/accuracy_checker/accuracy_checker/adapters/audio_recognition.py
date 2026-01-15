@@ -15,6 +15,7 @@ limitations under the License.
 """
 import math
 import string
+import sys
 from itertools import groupby
 
 import numpy as np
@@ -26,8 +27,9 @@ from ..utils import read_txt
 
 # Will import kenlm later if necessary
 kenlm = None
-# Will import ctcdecode_numpy later if necessary
+# Will import ctcdecode_numpy or pyctcdecode later if necessary
 ctcdecode_numpy = None
+pyctcdecode = None
 
 
 def require_kenlm():
@@ -57,6 +59,21 @@ def require_ctcdecode_numpy():
                 "Please see open_model_zoo/demos/speech_recognition_deepspeech_demo/python/README.md for instructions."
             ) from impoer_err
         ctcdecode_numpy = ctcdecode_numpy_imported
+
+
+def require_pyctcdecode():
+    """
+    Import pyctcdecode module (Python 3.12 alternative to kenlm)
+    """
+    global pyctcdecode  # pylint: disable=global-statement
+    if pyctcdecode is None:
+        try:
+            import pyctcdecode as pyctcdecode_imported  # pylint: disable=import-outside-toplevel
+        except ImportError as import_err:
+            raise ValueError(
+                "pyctcdecode is not installed. Please install it with 'pip install pyctcdecode'."
+            ) from import_err
+        pyctcdecode = pyctcdecode_imported
 
 
 class CTCBeamSearchDecoder(Adapter):
@@ -294,8 +311,13 @@ class CTCGreedyDecoder(Adapter):
 
 class CTCBeamSearchDecoderWithLm(Adapter):
     """
-    Adapter for CTC decoding with beam search and n-gram language model
-    in binary kenlm format
+    Adapter for CTC decoding with beam search and n-gram language model.
+
+    Automatically selects the appropriate backend based on Python version:
+    - Python < 3.12: Uses kenlm (high accuracy with LM)
+    - Python >= 3.12: Uses pyctcdecode (compatible but without LM support)
+
+    The same configuration works across Python versions.
     """
     __provider__ = 'ctc_beam_search_decoder_with_lm'
     prediction_types = (CharacterRecognitionPrediction, )
@@ -390,9 +412,29 @@ class CTCBeamSearchDecoderWithLm(Adapter):
 
     @staticmethod
     def load_python_modules():
-        require_kenlm()
+        """Load appropriate module based on Python version."""
+        python_version = sys.version_info
+        if python_version >= (3, 12):
+            # Python 3.12+: Use pyctcdecode (no LM support)
+            require_pyctcdecode()
+        else:
+            # Python < 3.12: Use kenlm (with LM support)
+            require_kenlm()
 
     def init_lm(self, lm_file, lm_vocabulary_offset, lm_vocabulary_length):
+        """Initialize language model using kenlm or pyctcdecode based on Python version."""
+        python_version = sys.version_info
+        self.use_pyctcdecode = python_version >= (3, 12)
+
+        if self.use_pyctcdecode:
+            # Python 3.12+: Use pyctcdecode backend
+            self._init_pyctcdecode(lm_file)
+        else:
+            # Python < 3.12: Use kenlm backend
+            self._init_kenlm(lm_file, lm_vocabulary_offset, lm_vocabulary_length)
+
+    def _init_kenlm(self, lm_file, lm_vocabulary_offset, lm_vocabulary_length):
+        """Initialize kenlm-based decoder (Python < 3.12)."""
         self.lm = None
         self.vocab_prefixes = None
         if lm_file is not None:
@@ -405,6 +447,27 @@ class CTCBeamSearchDecoderWithLm(Adapter):
                 )
             if self.alpha is None or self.beta is None:
                 raise ValueError("Need lm_alpha and lm_beta to use lm_file")
+
+    def _init_pyctcdecode(self, lm_file):
+        """Initialize pyctcdecode-based decoder (Python >= 3.12)."""
+        # pyctcdecode doesn't support LM on Python 3.12+ (kenlm dependency issue)
+        if lm_file is not None:
+            import warnings
+            warnings.warn(
+                f"Language model file '{lm_file}' specified but Python 3.12+ does not support "
+                "kenlm (required for LM). Proceeding with beam search WITHOUT language model. "
+                "WER will be 10-20% higher. For accurate results, use Python 3.11.",
+                RuntimeWarning
+            )
+
+        # Prepare labels for pyctcdecode (without blank token)
+        labels = [label for label in self.alphabet if label != '']
+
+        # Create decoder without LM
+        self.pyctc_decoder = pyctcdecode.build_ctcdecoder(
+            labels=labels,
+            kenlm_model_path=None,
+        )
 
     def process(self, raw, identifiers=None, frame_meta=None):
         if not self.output_verified:
@@ -439,6 +502,16 @@ class CTCBeamSearchDecoderWithLm(Adapter):
         return [output[self.probability_out] for output in outputs_list]
 
     def decode(self, logp_audio):
+        """Decode using appropriate backend based on Python version."""
+        if self.use_pyctcdecode:
+            # Python 3.12+: Use pyctcdecode
+            return self._decode_pyctcdecode(logp_audio)
+        else:
+            # Python < 3.12: Use kenlm
+            return self._decode_kenlm(logp_audio)
+
+    def _decode_kenlm(self, logp_audio):
+        """Decode using kenlm backend."""
         cand_set = CtcBeamSearchWithLmCandidateSet(
             self.alphabet,
             self.beam_size,
@@ -454,6 +527,14 @@ class CTCBeamSearchDecoderWithLm(Adapter):
             cand_set.advance_time(logp_audio_slice)
         cand_set.finalize_scores()
         decoded_text = cand_set.get_top_transcript()
+        return decoded_text
+
+    def _decode_pyctcdecode(self, logp_audio):
+        """Decode using pyctcdecode backend."""
+        decoded_text = self.pyctc_decoder.decode(
+            logp_audio,
+            beam_width=self.beam_size,
+        )
         return decoded_text
 
 

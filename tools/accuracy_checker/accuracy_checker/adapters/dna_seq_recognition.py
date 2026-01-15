@@ -21,10 +21,9 @@ from ..representation import DNASequencePrediction
 from ..utils import UnsupportedPackage
 
 try:
-    from fast_ctc_decode import beam_search, viterbi_search
+    from pyctcdecode import build_ctcdecoder
 except ImportError as import_error:
-    beam_search = UnsupportedPackage('fast_ctc_decode', import_error.msg)
-    viterbi_search = UnsupportedPackage('fast_ctc_decode', import_error.msg)
+    build_ctcdecoder = UnsupportedPackage('pyctcdecode', import_error.msg)
 
 
 
@@ -44,26 +43,28 @@ class DNASeqRecognition(Adapter):
         return params
 
     def configure(self):
-        if isinstance(beam_search, UnsupportedPackage):
-            beam_search.raise_error(self.__provider__)
+        if isinstance(build_ctcdecoder, UnsupportedPackage):
+            build_ctcdecoder.raise_error(self.__provider__)
         self.beam_size = self.get_value_from_config('beam_size')
         self.threshold = self.get_value_from_config('threshold')
         self.output_blob = self.get_value_from_config('output_blob')
-        self.output_verified = False
-
-    def process(self, raw, identifiers, frame_meta):
         if not self.label_map:
             raise ConfigError('Beam Search Decoder requires dataset label map for correct decoding.')
         alphabet = list(self.label_map.values())
+        self.decoder = build_ctcdecoder(
+            alphabet,
+            beam_width=self.beam_size,
+            beam_prune_logp=self.threshold
+        )
+        self.output_verified = False
+
+    def process(self, raw, identifiers, frame_meta):
         raw_outputs = self._extract_predictions(raw, frame_meta)
         if not self.output_verified:
             self.select_output_blob(raw_outputs)
         result = []
         for identifier, out in zip(identifiers, np.exp(raw_outputs[self.output_blob])):
-            if self.beam_size == 1:
-                seq, _ = viterbi_search(np.squeeze(out), alphabet, False, 1, 0)
-            else:
-                seq, _ = beam_search(np.squeeze(out.astype(np.float32)), alphabet, self.beam_size, self.threshold)
+            seq = self.decoder.decode(out)
             result.append(DNASequencePrediction(identifier, seq))
         return result
 
