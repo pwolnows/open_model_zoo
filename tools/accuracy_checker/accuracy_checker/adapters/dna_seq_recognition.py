@@ -55,9 +55,9 @@ class DNASeqRecognition(Adapter):
         # pyctcdecode will handle the CTC blank internally and expects labels without it
         alphabet_no_blank = [label for label in alphabet if label != '']
         print(alphabet_no_blank)
-        # build_ctcdecoder() only takes non-blank labels during initialization
-        # The blank token is handled internally by pyctcdecode
-        # beam_width and beam_prune_logp are passed to decode() method
+        if ' ' not in alphabet_no_blank:
+            self.beam_size += 1
+            alphabet_no_blank += [' ']  # Ensure space token is included
         self.decoder = build_ctcdecoder(alphabet_no_blank)
         self.output_verified = False
 
