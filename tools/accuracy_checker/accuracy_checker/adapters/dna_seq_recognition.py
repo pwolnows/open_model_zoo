@@ -51,6 +51,9 @@ class DNASeqRecognition(Adapter):
         if not self.label_map:
             raise ConfigError('Beam Search Decoder requires dataset label map for correct decoding.')
         alphabet = list(self.label_map.values())
+        # pyctcdecode automatically adds a CTC blank token to the alphabet
+        # If the label_map contains a blank (empty string), remove it to avoid duplication
+        alphabet = [label for label in alphabet if label != '']
         self.decoder = build_ctcdecoder(alphabet)
         self.output_verified = False
 
