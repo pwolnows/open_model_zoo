@@ -21,11 +21,11 @@ from ..representation import DNASequencePrediction
 from ..utils import UnsupportedPackage
 
 try:
-    from pyctcdecode import build_ctcdecoder
+    from pyctcdecode import BeamSearchDecoderCTC
+    from pyctcdecode.alphabet import Alphabet
 except ImportError as import_error:
-    build_ctcdecoder = UnsupportedPackage('pyctcdecode', import_error.msg)
-
-
+    BeamSearchDecoderCTC = UnsupportedPackage('pyctcdecode', import_error.msg)
+    Alphabet = UnsupportedPackage('pyctcdecode', import_error.msg)
 
 class DNASeqRecognition(Adapter):
     __provider__ = 'dna_seq_beam_search'
@@ -43,22 +43,18 @@ class DNASeqRecognition(Adapter):
         return params
 
     def configure(self):
-        if isinstance(build_ctcdecoder, UnsupportedPackage):
-            build_ctcdecoder.raise_error(self.__provider__)
+        if isinstance(BeamSearchDecoderCTC, UnsupportedPackage):
+            BeamSearchDecoderCTC.raise_error(self.__provider__)
         self.beam_size = self.get_value_from_config('beam_size')
         self.threshold = self.get_value_from_config('threshold')
         self.output_blob = self.get_value_from_config('output_blob')
         if not self.label_map:
             raise ConfigError('Beam Search Decoder requires dataset label map for correct decoding.')
-        alphabet = list(self.label_map.values())
-        # Remove empty string (blank) from alphabet if present
-        # pyctcdecode will handle the CTC blank internally and expects labels without it
-        alphabet_no_blank = [label for label in alphabet if label != '']
-        print(alphabet_no_blank)
-        if ' ' not in alphabet_no_blank:
-            self.beam_size += 1
-            alphabet_no_blank += [' ']  # Ensure space token is included
-        self.decoder = build_ctcdecoder(alphabet_no_blank)
+        alphabet_labels = list(self.label_map.values())
+        # Create Alphabet and BeamSearchDecoderCTC directly to avoid blank token handling issues
+        # Alphabet.build_alphabet() will normalize labels and add blank token if needed
+        alphabet = Alphabet.build_alphabet(alphabet_labels)
+        self.decoder = BeamSearchDecoderCTC(alphabet, None)
         self.output_verified = False
 
     def process(self, raw, identifiers, frame_meta):
