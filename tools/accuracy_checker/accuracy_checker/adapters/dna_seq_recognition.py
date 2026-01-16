@@ -51,11 +51,7 @@ class DNASeqRecognition(Adapter):
         if not self.label_map:
             raise ConfigError('Beam Search Decoder requires dataset label map for correct decoding.')
         alphabet = list(self.label_map.values())
-        self.decoder = build_ctcdecoder(
-            alphabet,
-            beam_width=self.beam_size,
-            beam_prune_logp=self.threshold
-        )
+        self.decoder = build_ctcdecoder(alphabet)
         self.output_verified = False
 
     def process(self, raw, identifiers, frame_meta):
@@ -64,7 +60,11 @@ class DNASeqRecognition(Adapter):
             self.select_output_blob(raw_outputs)
         result = []
         for identifier, out in zip(identifiers, np.exp(raw_outputs[self.output_blob])):
-            seq = self.decoder.decode(out)
+            seq = self.decoder.decode(
+                out,
+                beam_width=self.beam_size,
+                beam_prune_logp=self.threshold
+            )
             result.append(DNASequencePrediction(identifier, seq))
         return result
 
