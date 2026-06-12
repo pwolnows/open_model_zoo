@@ -234,6 +234,10 @@ class MSCOCOorigBaseMetric(FullDatasetEvaluationMetric):
             cur_num = len(labels)
             assert len(scores) == cur_num
 
+            #check if labels are inigers or scores are in range [0, 1]
+            if not all(isinstance(lbl, int) for lbl in labels):
+                raise ValueError("For coco_orig metrics labels should be integers and scores should be in range [0, 1].\nLabels: {}, scores: {}".format(labels, scores))
+
             coco_cats = [map_pred_label_id_to_coco_cat_id[round(lbl)] for lbl in labels]
 
             for (s, cur_cat) in zip(scores, coco_cats):
