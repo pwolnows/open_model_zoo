@@ -171,8 +171,9 @@ class VectorPrintPresenter(BasePresenter):
             mean_value = '' if not np.isscalar(value) and (value is None or None in value) else float(np.mean(value))
             value = np.append(value, mean_value)
         per_value_meta = []
-        target_per_value = meta.pop('target_per_value', {})
-        target = meta.pop('target', 'higher-better')
+        # use get, not pop: meta is shared with write_result, popping would remove these keys for it
+        target_per_value = meta.get('target_per_value', {})
+        target = meta.get('target', 'higher-better')
         for orig_name in value_names_orig:
             target_for_value = target_per_value.get(orig_name, target)
             meta_for_value = deepcopy(meta)
@@ -221,17 +222,17 @@ def write_scalar_result(
             rel_threshold and rel_threshold <= abs(diff_with_ref[1])
         )
         if abs_threshold is None:
-            result_message = "[abs error = {:.4} | relative error = {:.4}]".format(
+            result_message = "[error = {:.4} | relative error = {:.4}]".format(
                 diff_with_ref[0] * scale, diff_with_ref[1]
             )
             message = "{} {}{}".format(message, result_message, target_suffix)
         elif improved or not exceeds_threshold:
-            pass_message = "PASSED: [abs error = {:.4} | relative error = {:.4}]".format(
+            pass_message = "PASSED: [error = {:.4} | relative error = {:.4}]".format(
                 diff_with_ref[0] * scale, diff_with_ref[1]
             )
             message = "{} {}{}".format(message, color_format(pass_message, Color.PASSED), target_suffix)
         else:
-            fail_message = "FAILED: [abs error = {:.4} | relative error = {:.4}]".format(
+            fail_message = "FAILED: [error = {:.4} | relative error = {:.4}]".format(
                 diff_with_ref[0] * scale, diff_with_ref[1]
             )
             message = "{} {}{}".format(message, color_format(fail_message, Color.FAILED), target_suffix)
