@@ -54,7 +54,7 @@ class ScalarPrintPresenter(BasePresenter):
             difference = compare_with_ref(reference, value, name)
         write_scalar_result(
             value, name, abs_threshold, rel_threshold, difference,
-            postfix=postfix, scale=scale, result_format=result_format
+            postfix=postfix, scale=scale, result_format=result_format, meta=meta
         )
 
     def extract_result(self, evaluation_result, names_from_refs=False):
@@ -101,7 +101,7 @@ class VectorPrintPresenter(BasePresenter):
                 value_name=value_name,
                 postfix=postfix[0] if not np.isscalar(postfix) else postfix,
                 scale=scale[0] if not np.isscalar(scale) else scale,
-                result_format=result_format
+                result_format=result_format, meta=meta
             )
             return
 
@@ -117,7 +117,7 @@ class VectorPrintPresenter(BasePresenter):
                 value_name=value_name,
                 postfix=postfix[index] if not np.isscalar(postfix) else postfix,
                 scale=value_scale,
-                result_format=result_format
+                result_format=result_format, meta=meta
             )
 
         if len(value) > 1 and meta.get('calculate_mean', True):
@@ -129,7 +129,7 @@ class VectorPrintPresenter(BasePresenter):
             write_scalar_result(
                 mean_value, name, abs_threshold, rel_threshold, difference, value_name='mean',
                 postfix=postfix[-1] if not np.isscalar(postfix) else postfix, scale=value_scale,
-                result_format=result_format
+                result_format=result_format, meta=meta
             )
 
     def extract_result(self, evaluation_result, names_from_refs=False):
@@ -200,28 +200,41 @@ class VectorPrintPresenter(BasePresenter):
 
 def write_scalar_result(
         res_value, name, abs_threshold=None, rel_threshold=None, diff_with_ref=None, value_name=None,
-        postfix='%', scale=100, result_format='{:.3f}'
+        postfix='%', scale=100, result_format='{:.3f}', meta=None
 ):
     display_name = "{}@{}".format(name, value_name) if value_name else name
     display_result = result_format.format(res_value * scale)
     message = '{}: {}{}'.format(display_name, display_result, postfix)
 
+    target = None
+    if meta:
+        target = (meta.get('target_per_value') or {}).get(value_name, meta.get('target'))
+    target_suffix = ' {}'.format(target) if target else ''
+
     if diff_with_ref and (diff_with_ref[0] or diff_with_ref[1]):
+        # value moved in the direction favored by meta['target'], regardless of threshold
+        improved = target and (
+            (target == 'higher-better' and diff_with_ref[0] > 0) or
+            (target == 'higher-worse' and diff_with_ref[0] < 0)
+        )
+        exceeds_threshold = abs_threshold <= abs(diff_with_ref[0]) or (
+            rel_threshold and rel_threshold <= abs(diff_with_ref[1])
+        )
         if abs_threshold is None:
             result_message = "[abs error = {:.4} | relative error = {:.4}]".format(
                 diff_with_ref[0] * scale, diff_with_ref[1]
             )
-            message = "{} {}".format(message, result_message)
-        elif abs_threshold <= diff_with_ref[0] or (rel_threshold and rel_threshold <= diff_with_ref[1]):
-            fail_message = "FAILED: [abs error = {:.4} | relative error = {:.4}]".format(
-                diff_with_ref[0] * scale, diff_with_ref[1]
-            )
-            message = "{} {}".format(message, color_format(fail_message, Color.FAILED))
-        else:
+            message = "{} {}{}".format(message, result_message, target_suffix)
+        elif improved or not exceeds_threshold:
             pass_message = "PASSED: [abs error = {:.4} | relative error = {:.4}]".format(
                 diff_with_ref[0] * scale, diff_with_ref[1]
             )
-            message = "{} {}".format(message, color_format(pass_message, Color.PASSED))
+            message = "{} {}{}".format(message, color_format(pass_message, Color.PASSED), target_suffix)
+        else:
+            fail_message = "FAILED: [abs error = {:.4} | relative error = {:.4}]".format(
+                diff_with_ref[0] * scale, diff_with_ref[1]
+            )
+            message = "{} {}{}".format(message, color_format(fail_message, Color.FAILED), target_suffix)
 
     print_info(message)
 
@@ -237,7 +250,8 @@ def compare_with_ref(reference, res_value, name=None):
     ref = ref if ref is None else float(ref)
     if ref is None:
         return None
-    return abs(ref - res_value), abs(ref - res_value) / ref
+    diff = res_value - ref
+    return diff, diff / ref
 
 
 def get_result_format_parameters(meta, use_default_formatting):
