@@ -744,6 +744,7 @@ def _prepare_annotation_boxes(annotation, ignore_difficult, label):
 def _prepare_prediction_boxes(label, predictions, ignore_difficult):
     prediction_images = []
     prediction_boxes = []
+    prediction_identifiers = []
     indexes = []
     difficult_boxes = []
     all_label_indices = []
@@ -761,6 +762,7 @@ def _prepare_prediction_boxes(label, predictions, ignore_difficult):
         index_counter += len(prediction.labels)
 
         prediction_images.append(np.full(prediction.labels[idx].shape, i))
+        prediction_identifiers.extend([str(prediction.identifier)] * np.count_nonzero(idx))
         prediction_boxes.append(np.c_[
             prediction.scores[idx],
             prediction.x_mins[idx], prediction.y_mins[idx], prediction.x_maxs[idx], prediction.y_maxs[idx]
@@ -776,7 +778,11 @@ def _prepare_prediction_boxes(label, predictions, ignore_difficult):
 
     prediction_boxes = np.concatenate(prediction_boxes)
     difficult_boxes = np.concatenate(difficult_boxes)
-    sorted_order = np.argsort(-prediction_boxes[:, 0])
+    sorted_order = np.lexsort((
+        prediction_boxes[:, 4], prediction_boxes[:, 3],
+        prediction_boxes[:, 2], prediction_boxes[:, 1],
+        np.asarray(prediction_identifiers), -prediction_boxes[:, 0]
+    ))
     prediction_boxes = prediction_boxes[sorted_order]
     prediction_images = np.concatenate(prediction_images)[sorted_order]
     difficult_boxes = difficult_boxes[all_label_indices]

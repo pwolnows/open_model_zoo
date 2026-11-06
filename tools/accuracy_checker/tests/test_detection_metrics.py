@@ -392,6 +392,15 @@ class TestRecall:
 
 
 class TestMAP:
+    def test_equal_scores_are_independent_of_image_order(self):
+        gt = make_representation(["0 0 0 5 5", "0 0 0 5 5"], is_ground_truth=True)
+        pred = make_representation(["0 0 0 5 5", "0 10 10 15 15"], score=1)
+        gt[0].identifier = pred[0].identifier = "z"
+        gt[1].identifier = pred[1].identifier = "a"
+
+        metric = _test_metric_wrapper(DetectionMAP, single_class_dataset())
+        assert metric(gt, pred) == metric(gt[::-1], pred[::-1]) == [0.25]
+
     def test_selects_all_detections(self):
         gt = make_representation(["0 0 0 5 5"], is_ground_truth=True)
         pred = make_representation(["0 0 0 5 5; 0 0 0 5 5"], score=1)
